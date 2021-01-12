@@ -1,0 +1,67 @@
+trigger:
+- main
+
+resources:
+- repo: self
+
+variables:
+  tag: 24 # '$(Build.BuildId)'
+
+stages:
+# Stage 1 
+# Build the docker image
+
+- stage: Build
+  displayName: Build image
+  jobs:  
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    # - task: Docker@2
+    #   inputs:
+    #     containerRegistry: 'bbdocker-hub'
+    #     repository: 'bhabadyuti/currency-exchange-devops'
+    #     command: 'buildAndPush'
+    #     Dockerfile: '**/Dockerfile'
+    #     tags: '$(tag)'
+    - task: CopyFiles@2
+      inputs:
+        SourceFolder: '$(System.DefaultWorkingDirectory)'
+        Contents: '**/*.yaml'
+        TargetFolder: '$(Build.ArtifactStagingDirectory)'
+# Publish the K8s files
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'manifests'
+        publishLocation: 'Container'
+
+# Stage 2
+# Download the K8s manifests
+- stage: Deploy
+  displayName: Deploy image
+  jobs:  
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        buildType: 'current'
+        artifactName: 'manifests'
+        itemPattern: '**/*.yaml'
+        targetPath: '$(System.ArtifactsDirectory)'
+
+# Deploy to K8s cluster with Docker image that we have built in stage 1
+    - task: KubernetesManifest@0
+      inputs:
+        action: 'deploy'
+        kubernetesServiceConnection: 'azure-kubernetes-connection'
+        namespace: 'default'
+        manifests: '$(System.ArtifactsDirectory)/configuration/kubernetes/deployment.yaml'
+        containers: 'bhabadyuti/currency-exchange-devops:$(tag)'
+
+
